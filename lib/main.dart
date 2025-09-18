@@ -55,6 +55,55 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadSavedLeague();
   }
 
+  Color _getChipColor(String? chipName) {
+  if (chipName == null || chipName.isEmpty || chipName == 'None') {
+    return Colors.grey;
+  }
+  
+  switch (chipName.toLowerCase()) {
+    case 'wildcard':
+    case 'wc':
+      return Colors.purple;
+    case 'freehit':
+    case 'free hit':
+    case 'fh':
+      return Colors.blue;
+    case 'triplecaptain':
+    case 'triple captain':
+    case '3xc':
+      return Colors.orange;
+    case 'benchboost':
+    case 'bench boost':
+    case 'bb':
+      return Colors.green;
+    default:
+      return Colors.indigo;
+  }
+}
+
+String _getChipDisplayName(String? chipName) {
+  if (chipName == null || chipName.isEmpty || chipName == 'None') {
+    return 'None';
+  }
+  
+  switch (chipName.toLowerCase()) {
+    case 'wildcard':
+      return 'Wildcard';
+    case 'freehit':
+    case 'free hit':
+      return 'Free Hit';
+    case 'triplecaptain':
+    case '3xc':
+    case 'triple captain':
+      return 'Triple Captain';
+    case 'benchboost':
+    case 'bench boost':
+      return 'Bench Boost';
+    default:
+      return chipName.substring(0, 2).toUpperCase();
+  }
+}
+
   // Load previously used league ID
   Future<void> _loadSavedLeague() async {
     try {
@@ -410,7 +459,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(flex: 2, child: Text('Points', style: TextStyle(fontWeight: FontWeight.bold))),
                       //Expanded(flex: 2, child: Text('Captain', style: TextStyle(fontWeight: FontWeight.bold))),
                       Expanded(flex: 3, child: Text('Captain/Vice captain', style: TextStyle(fontWeight: FontWeight.bold))), // Updated
-
+                      Expanded(flex: 2, child: Text('Transfers/Cost', style: TextStyle(fontWeight: FontWeight.bold))), // NEW
+                      Expanded(flex: 2, child: Text('Chip', style: TextStyle(fontWeight: FontWeight.bold))), // NEW
                     ],
                   ),
                 ),
@@ -544,6 +594,59 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
                           ),
+
+                        // NEW: Transfers
+                        Expanded(
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${player['transfers'] ?? 0}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                (player['transfers_cost'] ?? 0) > 0 
+                                    ? '-${player['transfers_cost']}' 
+                                    : '${player['transfers_cost'] ?? 0}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: (player['transfers_cost'] ?? 0) > 0 ? Colors.red[600] : Colors.grey[600],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // NEW: Chip
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getChipColor(player['active_chip']).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: _getChipColor(player['active_chip']).withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              _getChipDisplayName(player['active_chip']),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: _getChipColor(player['active_chip']),
+                              ),
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
                         ],
                       ),
                     ),
