@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'config/api_config.dart';
 
 void main() {
   runApp(const FPLApp());
@@ -16,7 +18,7 @@ class FPLApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.purple,
-        primaryColor: const Color(0xFF37003C), // FPL purple
+        primaryColor: const Color(0xFF37003C),
         scaffoldBackgroundColor: const Color(0xFFF8F9FA),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF37003C),
@@ -37,50 +39,209 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Replace with your actual Railway URL
-  static const String apiBaseUrl = 'https://fpl-backend-production.up.railway.app';
+  static String get apiBaseUrl => ApiConfig.baseUrl;
   
   bool isLoading = false;
   String? error;
   Map<String, dynamic>? leagueData;
-  int leagueId = 559261; // Replace with your league ID
+  int? currentLeagueId;
+  bool showLeagueInput = true;
   
+  final TextEditingController _leagueController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedLeague();
+  }
+
+  // Load previously used league ID
+  Future<void> _loadSavedLeague() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedLeagueId = prefs.getInt('league_id');
+      
+      if (savedLeagueId != null) {
+        setState(() {
+          currentLeagueId = savedLeagueId;
+          _leagueController.text = savedLeagueId.toString();
+          showLeagueInput = false;
+        });
+        
+        // Try to load existing data
+        await _loadStandings();
+      }
+    } catch (e) {
+      print('Error loading saved league: $e');
+    }
+  }
+
+  // Save league ID for next time
+  Future<void> _saveLeagueId(int leagueId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('league_id', leagueId);
+    } catch (e) {
+      print('Error saving league ID: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('FPL League Analytics'),
+        title: Text(
+          currentLeagueId != null 
+              ? 'FPL League $currentLeagueId'
+              : 'FPL League Analytics'
+        ),
         actions: [
-          IconButton(
-            onPressed: isLoading ? null : _refreshData,
-            icon: isLoading 
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Icon(Icons.refresh),
-          ),
+          if (currentLeagueId != null) ...[
+            IconButton(
+              onPressed: isLoading ? null : _refreshData,
+              icon: isLoading 
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.refresh),
+            ),
+            IconButton(
+              onPressed: _changeLeague,
+              icon: const Icon(Icons.edit),
+              tooltip: 'Change League',
+            ),
+          ],
         ],
       ),
-      body: _buildBody(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: isLoading ? null : _collectData,
-        backgroundColor: Theme.of(context).primaryColor,
-        icon: isLoading 
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : const Icon(Icons.download),
-        label: Text(isLoading ? 'Loading...' : 'Update Data'),
+      body: showLeagueInput ? _buildLeagueInput() : _buildBody(),
+    );
+  }
+
+  Widget _buildLeagueInput() {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.sports_soccer,
+            size: 80,
+            color: Theme.of(context).primaryColor,
+          ),
+          const SizedBox(height: 24),
+          
+          Text(
+            'Enter Your FPL League',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).primaryColor,
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          Text(
+            'Enter your Fantasy Premier League mini-league ID to get started',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: Colors.grey[600],
+            ),
+          ),
+          
+          const SizedBox(height: 32),
+          
+          Card(
+            elevation: 4,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _leagueController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'League ID',
+                      hintText: 'e.g., 559261',
+                      prefixIcon: const Icon(Icons.numbers),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      helperText: 'Find this in your FPL league URL',
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  Text(
+                    'How to find your League ID:',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 8),
+                  
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '1. Go to your FPL league page',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                        ),
+                        Text(
+                          '2. Look at the URL:',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                        ),
+                        Text(
+                          'fantasy.premierleague.com/leagues/559261/standings',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[600], fontFamily: 'monospace'),
+                        ),
+                        Text(
+                          '3. Your League ID is: 559261',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[700], fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: isLoading ? null : _submitLeagueId,
+                      icon: isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.sports),
+                      label: Text(isLoading ? 'Loading League...' : 'Load League'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -136,6 +297,11 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: _collectData,
               child: const Text('Collect Fresh Data'),
             ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _changeLeague,
+              child: const Text('Change League'),
+            ),
           ],
         ),
       );
@@ -146,19 +312,13 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.sports_soccer,
-              size: 80,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 20),
             Text(
-              'Welcome to FPL Analytics',
+              'No Data Available',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 8),
             Text(
-              'Load your league data to get started',
+              'Click the button below to collect data',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Colors.grey[600],
               ),
@@ -167,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ElevatedButton.icon(
               onPressed: _collectData,
               icon: const Icon(Icons.download),
-              label: const Text('Load League Data'),
+              label: const Text('Collect League Data'),
             ),
           ],
         ),
@@ -202,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'League $leagueId',
+                          'League $currentLeagueId',
                           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -216,6 +376,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
+                  // Change league button
+                  IconButton(
+                    onPressed: _changeLeague,
+                    icon: const Icon(Icons.edit),
+                    tooltip: 'Change League',
+                  ),
                 ],
               ),
             ),
@@ -223,7 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
           
           const SizedBox(height: 16),
           
-          // Standings
+          // Standings table
           Card(
             child: Column(
               children: [
@@ -242,7 +408,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       SizedBox(width: 30, child: Text('#', style: TextStyle(fontWeight: FontWeight.bold))),
                       Expanded(flex: 3, child: Text('Manager', style: TextStyle(fontWeight: FontWeight.bold))),
                       Expanded(flex: 2, child: Text('Points', style: TextStyle(fontWeight: FontWeight.bold))),
-                      Expanded(flex: 2, child: Text('Captain', style: TextStyle(fontWeight: FontWeight.bold))),
+                      //Expanded(flex: 2, child: Text('Captain', style: TextStyle(fontWeight: FontWeight.bold))),
+                      Expanded(flex: 3, child: Text('Captain/Vice captain', style: TextStyle(fontWeight: FontWeight.bold))), // Updated
+
                     ],
                   ),
                 ),
@@ -252,96 +420,339 @@ class _HomeScreenState extends State<HomeScreen> {
                   final index = entry.key;
                   final player = entry.value as Map<String, dynamic>;
                   
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Colors.grey[200]!,
-                          width: 0.5,
+                  return InkWell(
+                    onTap: () => _showPlayerDetails(player),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Colors.grey[200]!,
+                            width: 0.5,
+                          ),
                         ),
                       ),
+                      child: Row(
+                        children: [
+                          // Position with trophy for top 3
+                          SizedBox(
+                            width: 30,
+                            child: Row(
+                              children: [
+                                if (index < 3) ...[
+                                  Icon(
+                                    Icons.emoji_events,
+                                    size: 16,
+                                    color: index == 0 ? Colors.amber : 
+                                           index == 1 ? Colors.grey[400] : 
+                                           Colors.brown[300],
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                                Text(
+                                  '${player['position'] ?? index + 1}',
+                                  style: TextStyle(
+                                    fontWeight: index < 3 ? FontWeight.bold : FontWeight.normal,
+                                    color: index < 3 ? Theme.of(context).primaryColor : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          // Manager info
+                          Expanded(
+                            flex: 3,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  player['player_name'] ?? 'Unknown Player',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                Text(
+                                  player['team_name'] ?? 'Unknown Team',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          // Points
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${player['total_points'] ?? 0}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _getPointsColor(player['gameweek_points'] ?? 0).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'GW: ${player['gameweek_points'] ?? 0}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: _getPointsColor(player['gameweek_points'] ?? 0),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          // Captain
+                          Expanded(
+                            flex: 3, // Increased from 2 to 3 to fit both
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '(C) ${player['captain'] ?? 'No Captain'}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  '(VC) ${player['vice_captain'] ?? 'No Vice Captain'}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[500],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 80), // Space for FAB
+        ],
+      ),
+    );
+  }
+
+  Color _getPointsColor(int points) {
+    if (points >= 80) return Colors.green;
+    if (points >= 60) return Colors.blue;
+    if (points >= 40) return Colors.orange;
+    return Colors.red;
+  }
+
+  void _showPlayerDetails(Map<String, dynamic> player) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+        ),
+        child: Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            
+            // Player details
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Row(
                       children: [
-                        // Position
-                        SizedBox(
-                          width: 30,
+                        CircleAvatar(
+                          backgroundColor: Theme.of(context).primaryColor,
                           child: Text(
-                            '${player['position'] ?? index + 1}',
-                            style: TextStyle(
-                              fontWeight: index < 3 ? FontWeight.bold : FontWeight.normal,
-                              color: index < 3 ? Theme.of(context).primaryColor : null,
+                            '${player['position'] ?? '?'}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-                        
-                        // Manager info
+                        const SizedBox(width: 16),
                         Expanded(
-                          flex: 3,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 player['player_name'] ?? 'Unknown Player',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
                               Text(
                                 player['team_name'] ?? 'Unknown Team',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        // Points
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${player['total_points'] ?? 0}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              Text(
-                                'GW: ${player['gameweek_points'] ?? 0}',
-                                style: TextStyle(
-                                  fontSize: 12,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                   color: Colors.grey[600],
                                 ),
                               ),
                             ],
-                          ),
-                        ),
-                        
-                        // Captain
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            player['captain'] ?? 'No Captain',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[700],
-                            ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
                     ),
-                  );
-                }).toList(),
-              ],
+                    
+                    const SizedBox(height: 24),
+                    
+                    // Stats cards
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard(
+                            'Total Points',
+                            '${player['total_points'] ?? 0}',
+                            Colors.purple,
+                            Icons.emoji_events,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildStatCard(
+                            'Gameweek',
+                            '${player['gameweek_points'] ?? 0}',
+                            Colors.blue,
+                            Icons.trending_up,
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Captain info
+                    _buildInfoCard(
+                      'Team Selection',
+                      [
+                        _buildInfoRow('Captain', player['captain'] ?? 'No Captain', Icons.star),
+                        _buildInfoRow('Vice Captain', player['vice_captain'] ?? 'No Vice Captain', Icons.star_border),
+                        _buildInfoRow('Active Chip', player['active_chip'] ?? 'None', Icons.casino),
+                        _buildInfoRow('Transfer Cost', '-${player['transfers_cost'] ?? 0}', Icons.swap_horiz),
+                        _buildInfoRow('Bench Points', '${player['points_on_bench'] ?? 0}', Icons.chair),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, Color color, IconData icon) {
+    return Card(
+      color: color.withOpacity(0.1),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(String title, List<Widget> children) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(color: Colors.grey[700]),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -349,18 +760,59 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _submitLeagueId() async {
+    final leagueIdText = _leagueController.text.trim();
+    
+    if (leagueIdText.isEmpty) {
+      setState(() {
+        error = 'Please enter a league ID';
+      });
+      return;
+    }
+    
+    final leagueId = int.tryParse(leagueIdText);
+    if (leagueId == null) {
+      setState(() {
+        error = 'Please enter a valid league ID (numbers only)';
+      });
+      return;
+    }
+    
+    setState(() {
+      currentLeagueId = leagueId;
+      showLeagueInput = false;
+      error = null;
+    });
+    
+    // Save for next time
+    await _saveLeagueId(leagueId);
+    
+    // Collect data for this league
+    await _collectData();
+  }
+
+  void _changeLeague() {
+    setState(() {
+      showLeagueInput = true;
+      leagueData = null;
+      error = null;
+      currentLeagueId = null;
+    });
+  }
+
   Future<void> _collectData() async {
+    if (currentLeagueId == null) return;
+    
     setState(() {
       isLoading = true;
       error = null;
     });
 
     try {
-      print('Making POST request to: $apiBaseUrl/collect-data/$leagueId');
+      print('Making POST request to: $apiBaseUrl/collect-data/$currentLeagueId');
       
-      // Collect data with POST request
       final collectResponse = await http.post(
-        Uri.parse('$apiBaseUrl/collect-data/$leagueId'),
+        Uri.parse('$apiBaseUrl/collect-data/$currentLeagueId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -368,16 +820,15 @@ class _HomeScreenState extends State<HomeScreen> {
       ).timeout(const Duration(seconds: 120));
 
       print('Collect response status: ${collectResponse.statusCode}');
-      print('Collect response body: ${collectResponse.body}');
 
       if (collectResponse.statusCode != 200) {
-        throw Exception('Failed to collect data: ${collectResponse.statusCode} - ${collectResponse.body}');
+        throw Exception('Failed to collect data: ${collectResponse.statusCode}');
       }
 
       // Wait for processing
       await Future.delayed(const Duration(seconds: 5));
 
-      // Load standings with GET request
+      // Load standings
       await _loadStandings();
 
       if (mounted) {
@@ -401,16 +852,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadStandings() async {
+    if (currentLeagueId == null) return;
+    
     setState(() {
       isLoading = true;
       error = null;
     });
 
     try {
+      print('Making GET request to: $apiBaseUrl/league/$currentLeagueId/standings');
+      
       final response = await http.get(
-        Uri.parse('$apiBaseUrl/league/$leagueId/standings'),
+        Uri.parse('$apiBaseUrl/league/$currentLeagueId/standings'),
         headers: {'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 30));
+
+      print('Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -422,9 +879,10 @@ class _HomeScreenState extends State<HomeScreen> {
           error = 'No data found. Try collecting fresh data first.';
         });
       } else {
-        throw Exception('Failed to load standings: ${response.statusCode}');
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
+      print('Loading error: $e');
       setState(() {
         error = 'Failed to load standings: ${e.toString()}';
       });
@@ -437,5 +895,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _refreshData() async {
     await _loadStandings();
+  }
+
+  @override
+  void dispose() {
+    _leagueController.dispose();
+    super.dispose();
   }
 }

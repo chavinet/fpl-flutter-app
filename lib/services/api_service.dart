@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/league.dart';
 import '../models/player.dart';
+import '../config/api_config.dart';
 
 class ApiService {
   // Replace with your Railway URL
-  static const String baseUrl = 'https://fpl-backend-production.up.railway.app/';
+  static String get baseUrl => ApiConfig.baseUrl;
   
   // Singleton pattern
   static final ApiService _instance = ApiService._internal();
